@@ -129,11 +129,21 @@ Client 1 (First)         Client 2 (Duplicate)          IdemGate                 
 
 ## Web Console Dashboard
 
-IdemGate includes a built-in dark-mode management console at `/idemgate/dashboard`. Open `http://localhost:8080/idemgate/dashboard` in any browser to:
-- Monitor live throughput, cache hit ratios, and rate-limiting rejections in real time.
-- Search and inspect stored idempotency records, including HTTP status codes and payload sizes.
-- Manually evict idempotency keys with one click.
-- Test requests interactively using the live simulator widget.
+IdemGate includes a built-in dark mode management console at `/idemgate/dashboard`. Open `http://localhost:8080/idemgate/dashboard` in a browser to inspect live proxy operations, metrics, and key records:
+
+<p align="center">
+  <img src="docs/images/dashboard-live-overview.png" alt="IdemGate Live Management Dashboard" width="100%" />
+</p>
+
+The dashboard provides:
+- Live metrics for total throughput, cache hit percentage, serialized race conditions, and throttled requests.
+- Idempotency key registry displaying SHA-256 fingerprints, HTTP status codes, and single-click manual eviction.
+- An interactive request simulator that submits requests through the proxy filter and prints latency and replay telemetry.
+- Detailed modal inspection showing stored response headers, expiration times, and payload metadata.
+
+<p align="center">
+  <img src="docs/images/dashboard-inspect-modal.png" alt="IdemGate Key Inspection Modal" width="100%" />
+</p>
 
 ## Configuration
 
