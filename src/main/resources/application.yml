@@ -1,0 +1,67 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: idemgate
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 2000ms
+
+idemgate:
+  upstream:
+    url: ${IDEMGATE_UPSTREAM_URL:http://localhost:8080/upstream-mock}
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+
+  storage:
+    type: ${IDEMGATE_STORAGE_TYPE:memory} # memory or redis
+
+  idempotency:
+    enabled: true
+    header-name: "Idempotency-Key"
+    lock-ttl-seconds: ${IDEMGATE_LOCK_TTL:30}
+    record-ttl-seconds: ${IDEMGATE_RECORD_TTL:86400}
+    max-body-size-bytes: 10485760 # 10MB limit
+    wait-timeout-seconds: 30
+    routes:
+      - path: "/api/**"
+        required: false
+
+  rate-limit:
+    enabled: ${IDEMGATE_RATE_LIMIT_ENABLED:true}
+    tenant-header: "X-API-Key"
+    default-capacity: ${IDEMGATE_RATE_LIMIT_CAPACITY:100}
+    default-refill-rate: ${IDEMGATE_RATE_LIMIT_REFILL_RATE:20}
+    tiers:
+      free:
+        capacity: 20
+        refill-rate: 5
+      pro:
+        capacity: 200
+        refill-rate: 50
+      enterprise:
+        capacity: 1000
+        refill-rate: 250
+
+management:
+  health:
+    redis:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    prometheus:
+      access: unrestricted
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: idemgate

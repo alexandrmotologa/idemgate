@@ -1,0 +1,11 @@
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+idemgate:
+  storage:
+    type: redis
+  upstream:
+    url: http://localhost:8080/upstream-mock

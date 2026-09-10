@@ -1,0 +1,58 @@
+server:
+  port: 0
+
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.data.redis.RedisReactiveHealthContributorAutoConfiguration
+
+management:
+  health:
+    redis:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    prometheus:
+      access: unrestricted
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+idemgate:
+  upstream:
+    url: "http://localhost:8080/upstream-mock"
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+
+  storage:
+    type: memory
+
+  idempotency:
+    enabled: true
+    header-name: "Idempotency-Key"
+    lock-ttl-seconds: 15
+    record-ttl-seconds: 3600
+    max-body-size-bytes: 1048576
+    wait-timeout-seconds: 10
+    routes:
+      - path: "/api/**"
+        required: false
+
+  rate-limit:
+    enabled: true
+    tenant-header: "X-API-Key"
+    default-capacity: 50
+    default-refill-rate: 10
+    tiers:
+      free:
+        capacity: 5
+        refill-rate: 2
+      pro:
+        capacity: 100
+        refill-rate: 50
