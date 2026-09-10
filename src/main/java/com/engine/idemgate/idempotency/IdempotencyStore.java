@@ -55,4 +55,20 @@ public interface IdempotencyStore {
      * @return Mono emitting the resolved response, or timing out with TimeoutException
      */
     Mono<CachedHttpResponse> awaitResolution(String key, int timeoutSeconds);
+
+    /**
+     * Manually evicts an idempotency key from cache and cancels any pending locks.
+     *
+     * @param key Idempotency key
+     * @return Mono emitting true if key existed and was evicted, false otherwise
+     */
+    Mono<Boolean> evict(String key);
+
+    /**
+     * Lists active idempotency records up to the specified limit.
+     *
+     * @param limit Maximum number of records to return
+     * @return Mono emitting list of records
+     */
+    Mono<java.util.List<IdempotencyRecord>> listKeys(int limit);
 }

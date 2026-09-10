@@ -18,10 +18,13 @@ When clients retry requests or send parallel requests with the same `Idempotency
 
 - **IETF RFC Compliance**: Implements `draft-ietf-httpapi-idempotency-key-header-04` including `Idempotency-Key` validation, payload fingerprinting, and RFC 7807 problem details.
 - **Concurrent Race Serialization**: When duplicate requests arrive simultaneously, IdemGate holds secondary requests on a synchronization channel until the first finishes, avoiding duplicate backend execution.
-- **Payload Fingerprinting**: Computes a SHA-256 digest over the HTTP method, normalized target path, query string, and request payload. Reusing a key with a different body returns `422 Unprocessable Entity`.
+- **Payload & Header Fingerprinting**: Computes a SHA-256 digest over the HTTP method, normalized target path, query string, request payload, and optional whitelisted headers (e.g. `X-Tenant-ID`). Reusing a key with an altered body or header returns `422 Unprocessable Entity`.
 - **Dual Backplane Architecture**: Runs with distributed Redis 7+ and Redisson in multi-node clusters, or with an embedded Caffeine and CompletableFuture store for standalone and local development setups.
-- **Token Bucket Rate Limiting**: Multi-tenant rate limiting using Redis atomic Lua scripts or an in-memory token bucket. Supports tenant extraction by API key, authorization header, or client IP.
-- **Telemetry and Metrics**: Exposes Prometheus metrics covering request rates, cache hits, cache misses, serialized races, and rate-limited calls.
+- **Multi-Tenant & Route Rate Limiting**: Token bucket rate limiting using Redis atomic Lua scripts or an in-memory bucket. Supports tenant extraction, tier overrides, and granular route/method-specific rules.
+- **Web Console Dashboard**: Embedded, zero-dependency dark-mode dashboard at `/idemgate/dashboard` featuring real-time metrics, active key inspection, and an interactive request simulator.
+- **Operator Eviction API**: REST management endpoints to list active keys (`GET /idemgate/api/v1/keys`) and manually evict poisoned or expired keys (`DELETE /idemgate/api/v1/keys/{key}`).
+- **W3C Tracing & Telemetry**: Propagates W3C `traceparent` headers and injects `X-IdemGate-Request-Id` and `X-IdemGate-Latency-Ms` timing headers on all responses.
+- **Prometheus Metrics**: Detailed counters and timers covering request volume, cache hits, cache misses, serialized races, and rate-limited calls.
 
 ## Quick Start
 
@@ -123,6 +126,14 @@ Client 1 (First)         Client 2 (Duplicate)          IdemGate                 
    |<-- 201 (Replayed: false) ----|                       |                            |
                                   |<-- 201 (Replayed: true)                            |
 ```
+
+## Web Console Dashboard
+
+IdemGate includes a built-in dark-mode management console at `/idemgate/dashboard`. Open `http://localhost:8080/idemgate/dashboard` in any browser to:
+- Monitor live throughput, cache hit ratios, and rate-limiting rejections in real time.
+- Search and inspect stored idempotency records, including HTTP status codes and payload sizes.
+- Manually evict idempotency keys with one click.
+- Test requests interactively using the live simulator widget.
 
 ## Configuration
 

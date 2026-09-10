@@ -26,12 +26,20 @@ idemgate:
     routes:
       - path: "/api/**"
         required: false
+    fingerprint:
+      include-headers:
+        - "X-Tenant-ID"
 
   rate-limit:
     enabled: true
     tenant-header: "X-API-Key"
     default-capacity: 100
     default-refill-rate: 20
+    route-rules:
+      - path: "/api/v1/payments/**"
+        method: "POST"
+        capacity: 10
+        refill-rate: 2
     tiers:
       free:
         capacity: 20

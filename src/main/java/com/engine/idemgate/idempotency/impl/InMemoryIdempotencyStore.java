@@ -130,4 +130,33 @@ public class InMemoryIdempotencyStore implements IdempotencyStore {
 
         return Mono.error(new IllegalStateException("No in-flight execution found to await for key: " + key));
     }
+
+    @Override
+    public Mono<Boolean> evict(String key) {
+        synchronized (lock) {
+            boolean existed = cache.getIfPresent(key) != null;
+            cache.invalidate(key);
+            CompletableFuture<CachedHttpResponse> future = inFlightWaiters.remove(key);
+            if (future != null) {
+                future.cancel(true);
+            }
+            return Mono.just(existed);
+        }
+    }
+
+    @Override
+    public Mono<java.util.List<IdempotencyRecord>> listKeys(int limit) {
+        return Mono.fromCallable(() -> {
+            java.util.List<IdempotencyRecord> records = new java.util.ArrayList<>();
+            for (IdempotencyRecord record : cache.asMap().values()) {
+                if (!record.isExpired()) {
+                    records.add(record);
+                    if (records.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+            return records;
+        });
+    }
 }

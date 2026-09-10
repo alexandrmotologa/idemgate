@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IdemGate Console — Distributed Idempotency & Rate Limiting</title>
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --bg-surface: #111827;
+            --bg-surface-elevated: #1e293b;
+            --border-subtle: #334155;
+            --border-focus: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --accent-purple: #a855f7;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 28px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .brand-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-badge {
+            background: linear-gradient(135deg, #0284c7, #6366f1);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-emerald);
+            box-shadow: 0 0 10px var(--accent-emerald);
+        }
+
+        .btn {
+            background: var(--bg-surface-elevated);
+            color: var(--text-main);
+            border: 1px solid var(--border-subtle);
+            padding: 8px 16px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            border-color: var(--accent-blue);
+            background: #273549;
+        }
+
+        .btn-danger {
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--accent-rose);
+            border-color: rgba(244, 63, 94, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(244, 63, 94, 0.3);
+            border-color: var(--accent-rose);
+        }
+
+        .btn-primary {
+            background: #0284c7;
+            color: #fff;
+            border-color: #0284c7;
+        }
+
+        .btn-primary:hover {
+            background: #0369a1;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 18px 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--accent-blue);
+        }
+
+        .stat-card.emerald::before { background: var(--accent-emerald); }
+        .stat-card.purple::before { background: var(--accent-purple); }
+        .stat-card.amber::before { background: var(--accent-amber); }
+        .stat-card.rose::before { background: var(--accent-rose); }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.9rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .stat-subtext {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Main Section Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .search-bar {
+            width: 100%;
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            margin-bottom: 16px;
+        }
+
+        .search-bar:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        /* Table */
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th {
+            background: var(--bg-surface-elevated);
+            color: var(--text-muted);
+            padding: 10px 14px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+            font-family: monospace;
+        }
+
+        tr:hover td {
+            background: rgba(30, 41, 59, 0.5);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            font-family: sans-serif;
+            text-transform: uppercase;
+        }
+
+        .badge-resolved {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-inflight {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Interactive Simulator Panel */
+        .sim-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        input, textarea, select {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            color: var(--text-main);
+            font-size: 0.85rem;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .sim-result {
+            margin-top: 12px;
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            font-family: monospace;
+            font-size: 0.78rem;
+            max-height: 180px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 650px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="brand-title">
+            <h1 style="font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em;">IdemGate</h1>
+            <span class="brand-badge">Proxy Console</span>
+        </div>
+        <div class="header-controls">
+            <div class="status-indicator">
+                <span class="pulse-dot"></span>
+                <span>Active & Healthy</span>
+            </div>
+            <button class="btn" onclick="fetchLiveStats(); fetchKeys();">Refresh Now</button>
+        </div>
+    </header>
+
+    <!-- Top Stats Row -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total Requests</div>
+            <div class="stat-value" id="statTotalRequests">0</div>
+            <div class="stat-subtext">Processed by proxy</div>
+        </div>
+        <div class="stat-card emerald">
+            <div class="stat-label">Cache Hit Ratio</div>
+            <div class="stat-value" id="statHitRatio">0.0%</div>
+            <div class="stat-subtext" id="statHitsAndMisses">0 hits / 0 misses</div>
+        </div>
+        <div class="stat-card purple">
+            <div class="stat-label">Races Serialized</div>
+            <div class="stat-value" id="statRacesSerialized">0</div>
+            <div class="stat-subtext">Parallel duplicates serialized</div>
+        </div>
+        <div class="stat-card amber">
+            <div class="stat-label">Active Cached Keys</div>
+            <div class="stat-value" id="statActiveKeys">0</div>
+            <div class="stat-subtext">In-flight and resolved</div>
+        </div>
+        <div class="stat-card rose">
+            <div class="stat-label">Throttled Requests</div>
+            <div class="stat-value" id="statRateLimited">0</div>
+            <div class="stat-subtext">HTTP 429 Too Many Requests</div>
+        </div>
+    </div>
+
+    <!-- Main Content Row -->
+    <div class="main-grid">
+        <!-- Keys Management Table -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Idempotency Keys Register</div>
+                <span style="font-size: 0.8rem; color: var(--text-muted);" id="tableCount">0 keys stored</span>
+            </div>
+
+            <input type="text" id="searchInput" class="search-bar" placeholder="Search by key, status, or fingerprint..." oninput="filterTable()">
+
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Status</th>
+                            <th>Fingerprint (SHA-256)</th>
+                            <th>Code</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keysTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No active idempotency keys found.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Interactive Testing Simulator -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Live Request Simulator</div>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
+                Send a test request through IdemGate to watch concurrency locking and cached replay in real time.
+            </p>
+
+            <form class="sim-form" onsubmit="executeSimulation(event)">
+                <div class="form-group">
+                    <label>Idempotency-Key</label>
+                    <input type="text" id="simKey" value="demo-order-key-101" required>
+                </div>
+                <div class="form-group">
+                    <label>API Key (Tenant)</label>
+                    <input type="text" id="simApiKey" value="tenant-acme-corp">
+                </div>
+                <div class="form-group">
+                    <label>JSON Payload</label>
+                    <textarea id="simBody" rows="3">{"orderId": "101", "amount": 199.99, "currency": "USD"}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 6px;">Send Request</button>
+            </form>
+
+            <div class="sim-result" id="simResultOutput">// Request telemetry will appear here...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Key Inspection Modal -->
+<div class="modal-overlay" id="inspectModal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 style="font-size: 1.15rem; font-weight: 700;">Key Details</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <pre id="modalJsonContent" style="background: var(--bg-base); padding: 14px; border-radius: var(--radius-md); font-size: 0.8rem; overflow-x: auto; max-height: 400px;"></pre>
+    </div>
+</div>
+
+<script>
+    let allKeys = [];
+
+    async function fetchLiveStats() {
+        try {
+            const res = await fetch('/idemgate/api/v1/stats');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            document.getElementById('statTotalRequests').innerText = data.totalRequests || 0;
+            document.getElementById('statHitRatio').innerText = (data.cacheHitRatioPercent || 0) + '%';
+            document.getElementById('statHitsAndMisses').innerText = `${data.cacheHits || 0} hits / ${data.cacheMisses || 0} misses`;
+            document.getElementById('statRacesSerialized').innerText = data.raceConditionsSerialized || 0;
+            document.getElementById('statActiveKeys').innerText = data.activeCachedKeys || 0;
+            document.getElementById('statRateLimited').innerText = data.rateLimitedRequests || 0;
+        } catch (e) {
+            console.error("Failed to load live stats", e);
+        }
+    }
+
+    async function fetchKeys() {
+        try {
+            const res = await fetch('/idemgate/api/v1/keys?limit=100');
+            if (!res.ok) return;
+            const data = await res.json();
+            allKeys = data.keys || [];
+            renderTable(allKeys);
+        } catch (e) {
+            console.error("Failed to load keys", e);
+        }
+    }
+
+    function renderTable(keys) {
+        const tbody = document.getElementById('keysTableBody');
+        document.getElementById('tableCount').innerText = `${keys.length} keys stored`;
+
+        if (!keys || keys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No active idempotency keys found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = keys.map(k => {
+            const badgeClass = k.status === 'RESOLVED' ? 'badge-resolved' : 'badge-inflight';
+            const shortFp = k.fingerprint ? k.fingerprint.substring(0, 12) + '...' : 'none';
+            const shortTime = k.createdAt ? new Date(k.createdAt).toLocaleTimeString() : '-';
+            const code = k.statusCode ? k.statusCode : '-';
+
+            return `
+                <tr>
+                    <td style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(k.key)}</td>
+                    <td><span class="badge ${badgeClass}">${k.status}</span></td>
+                    <td title="${k.fingerprint}">${shortFp}</td>
+                    <td>${code}</td>
+                    <td>${shortTime}</td>
+                    <td>
+                        <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="inspectKey('${k.key}')">Inspect</button>
+                        <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem; margin-left: 4px;" onclick="evictKey('${k.key}')">Evict</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function filterTable() {
+        const q = document.getElementById('searchInput').value.toLowerCase().trim();
+        if (!q) {
+            renderTable(allKeys);
+            return;
+        }
+        const filtered = allKeys.filter(k =>
+            (k.key && k.key.toLowerCase().includes(q)) ||
+            (k.status && k.status.toLowerCase().includes(q)) ||
+            (k.fingerprint && k.fingerprint.toLowerCase().includes(q))
+        );
+        renderTable(filtered);
+    }
+
+    async function inspectKey(key) {
+        try {
+            const res = await fetch(`/idemgate/api/v1/inspect/${encodeURIComponent(key)}`);
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('modalJsonContent').innerText = JSON.stringify(data, null, 2);
+                document.getElementById('inspectModal').style.display = 'flex';
+            }
+        } catch (e) {
+            alert("Could not inspect key: " + e.message);
+        }
+    }
+
+    async function evictKey(key) {
+        if (!confirm(`Are you sure you want to evict idempotency key '${key}'?`)) return;
+        try {
+            const res = await fetch(`/idemgate/api/v1/keys/${encodeURIComponent(key)}`, { method: 'DELETE' });
+            if (res.ok) {
+                fetchKeys();
+                fetchLiveStats();
+            }
+        } catch (e) {
+            alert("Failed to evict key: " + e.message);
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('inspectModal').style.display = 'none';
+    }
+
+    async function executeSimulation(e) {
+        e.preventDefault();
+        const key = document.getElementById('simKey').value.trim();
+        const apiKey = document.getElementById('simApiKey').value.trim();
+        const body = document.getElementById('simBody').value;
+        const out = document.getElementById('simResultOutput');
+
+        out.innerText = "Dispatching request through proxy...";
+
+        const start = performance.now();
+        try {
+            const res = await fetch('/api/v1/orders', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Idempotency-Key': key,
+                    'X-API-Key': apiKey
+                },
+                body: body
+            });
+
+            const duration = Math.round(performance.now() - start);
+            const status = res.status;
+            const replayed = res.headers.get('Idempotent-Replayed');
+            const reqId = res.headers.get('X-IdemGate-Request-Id');
+            const proxyLatency = res.headers.get('X-IdemGate-Latency-Ms');
+            const data = await res.json();
+
+            out.innerText = `HTTP ${status} (${duration}ms)\n` +
+                `Idempotent-Replayed: ${replayed}\n` +
+                `X-IdemGate-Request-Id: ${reqId}\n` +
+                `X-IdemGate-Latency-Ms: ${proxyLatency}ms\n\n` +
+                JSON.stringify(data, null, 2);
+
+            fetchKeys();
+            fetchLiveStats();
+        } catch (err) {
+            out.innerText = "Error: " + err.message;
+        }
+    }
+
+    function escapeHtml(str) {
+        return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Auto-refresh stats every 4 seconds
+    setInterval(() => {
+        fetchLiveStats();
+        fetchKeys();
+    }, 4000);
+
+    // Initial load
+    fetchLiveStats();
+    fetchKeys();
+</script>
+</body>
+</html>

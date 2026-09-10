@@ -84,12 +84,28 @@ public class ReverseProxyFilter implements WebFilter {
         ServerHttpRequest request = exchange.getRequest();
         ServerHttpResponse response = exchange.getResponse();
 
+        String requestId = request.getHeaders().getFirst("X-Request-Id");
+        if (requestId == null || requestId.isBlank()) {
+            requestId = java.util.UUID.randomUUID().toString();
+        }
+        final String effectiveRequestId = requestId;
+
+        String incomingTrace = request.getHeaders().getFirst("traceparent");
+        final String effectiveTraceparent = (incomingTrace != null && !incomingTrace.isBlank())
+                ? incomingTrace
+                : "00-" + java.util.UUID.randomUUID().toString().replace("-", "") + "-0000000000000000-01";
+
+        response.getHeaders().set("X-IdemGate-Request-Id", effectiveRequestId);
+        response.getHeaders().set("traceparent", effectiveTraceparent);
+
         // 1. Rate Limiting Evaluation
         return rateLimiterService.checkRateLimit(request)
                 .flatMap(rateResult -> {
                     applyRateLimitHeaders(response, rateResult);
 
                     if (!rateResult.isAllowed()) {
+                        long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
+                        response.getHeaders().set("X-IdemGate-Latency-Ms", String.valueOf(durationMs));
                         return writeRateLimitExceededResponse(response, path, rateResult);
                     }
 
@@ -102,7 +118,11 @@ public class ReverseProxyFilter implements WebFilter {
 
                                 // 3. Process via Idempotency Engine
                                 return idempotencyEngine.handle(method, path, query, headers, bodyBytes)
-                                        .flatMap(cachedResponse -> writeToClientResponse(response, cachedResponse));
+                                        .flatMap(cachedResponse -> {
+                                            long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
+                                            response.getHeaders().set("X-IdemGate-Latency-Ms", String.valueOf(durationMs));
+                                            return writeToClientResponse(response, cachedResponse);
+                                        });
                             });
                 })
                 .doFinally(signalType -> metrics.recordProxyLatency(System.nanoTime() - startNanos));

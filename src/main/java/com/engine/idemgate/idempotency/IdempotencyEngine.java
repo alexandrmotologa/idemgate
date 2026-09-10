@@ -104,8 +104,9 @@ public class IdempotencyEngine {
             ));
         }
 
-        // Compute SHA-256 fingerprint
-        String fingerprint = fingerprinter.computeFingerprint(method, path, query, body);
+        // Compute SHA-256 fingerprint with optional whitelisted headers
+        List<String> includeHeaders = properties.getIdempotency().getFingerprint().getIncludeHeaders();
+        String fingerprint = fingerprinter.computeFingerprint(method, path, query, body, headers, includeHeaders);
         int lockTtl = properties.getIdempotency().getLockTtlSeconds();
         int recordTtl = properties.getIdempotency().getRecordTtlSeconds();
         int waitTimeout = properties.getIdempotency().getWaitTimeoutSeconds();

@@ -103,6 +103,7 @@ public class IdemGateProperties {
         private long maxBodySizeBytes = 10485760; // 10 MB
         private int waitTimeoutSeconds = 30;
         private List<RouteRule> routes = new ArrayList<>();
+        private Fingerprint fingerprint = new Fingerprint();
 
         public boolean isEnabled() {
             return enabled;
@@ -159,6 +160,26 @@ public class IdemGateProperties {
         public void setRoutes(List<RouteRule> routes) {
             this.routes = routes;
         }
+
+        public Fingerprint getFingerprint() {
+            return fingerprint;
+        }
+
+        public void setFingerprint(Fingerprint fingerprint) {
+            this.fingerprint = fingerprint;
+        }
+    }
+
+    public static class Fingerprint {
+        private List<String> includeHeaders = new ArrayList<>();
+
+        public List<String> getIncludeHeaders() {
+            return includeHeaders;
+        }
+
+        public void setIncludeHeaders(List<String> includeHeaders) {
+            this.includeHeaders = includeHeaders;
+        }
     }
 
     public static class RouteRule {
@@ -188,6 +209,7 @@ public class IdemGateProperties {
         private long defaultCapacity = 100;
         private long defaultRefillRate = 20;
         private Map<String, TierRule> tiers = new HashMap<>();
+        private List<RouteRateLimitRule> routeRules = new ArrayList<>();
 
         public boolean isEnabled() {
             return enabled;
@@ -227,6 +249,53 @@ public class IdemGateProperties {
 
         public void setTiers(Map<String, TierRule> tiers) {
             this.tiers = tiers;
+        }
+
+        public List<RouteRateLimitRule> getRouteRules() {
+            return routeRules;
+        }
+
+        public void setRouteRules(List<RouteRateLimitRule> routeRules) {
+            this.routeRules = routeRules;
+        }
+    }
+
+    public static class RouteRateLimitRule {
+        private String path = "/**";
+        private String method = "*";
+        private long capacity = 50;
+        private long refillRate = 10;
+
+        public String getPath() {
+            return path;
+        }
+
+        public void setPath(String path) {
+            this.path = path;
+        }
+
+        public String getMethod() {
+            return method;
+        }
+
+        public void setMethod(String method) {
+            this.method = method;
+        }
+
+        public long getCapacity() {
+            return capacity;
+        }
+
+        public void setCapacity(long capacity) {
+            this.capacity = capacity;
+        }
+
+        public long getRefillRate() {
+            return refillRate;
+        }
+
+        public void setRefillRate(long refillRate) {
+            this.refillRate = refillRate;
         }
     }
 

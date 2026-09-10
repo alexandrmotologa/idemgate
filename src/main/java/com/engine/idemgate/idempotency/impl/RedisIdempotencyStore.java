@@ -136,4 +136,37 @@ public class RedisIdempotencyStore implements IdempotencyStore {
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .doFinally(signalType -> topic.removeListener(listenerId));
     }
+
+    @Override
+    public Mono<Boolean> evict(String key) {
+        return Mono.fromCallable(() -> {
+            Boolean deleted = redisTemplate.delete(KEY_PREFIX + key);
+            RLock lock = redissonClient.getLock(LOCK_PREFIX + key);
+            if (lock.isLocked() && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+            return Boolean.TRUE.equals(deleted);
+        });
+    }
+
+    @Override
+    public Mono<java.util.List<IdempotencyRecord>> listKeys(int limit) {
+        return Mono.fromCallable(() -> {
+            java.util.Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
+            if (keys == null || keys.isEmpty()) {
+                return java.util.Collections.emptyList();
+            }
+            java.util.List<IdempotencyRecord> records = new java.util.ArrayList<>();
+            for (String redisKey : keys) {
+                IdempotencyRecord rec = redisTemplate.opsForValue().get(redisKey);
+                if (rec != null && !rec.isExpired()) {
+                    records.add(rec);
+                    if (records.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+            return records;
+        });
+    }
 }
