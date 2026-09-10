@@ -1,8 +1,24 @@
-# IdemGate
+<p align="center">
+  <img src="docs/images/logo.png" alt="IdemGate Logo" width="130" style="border-radius: 24px;" />
+</p>
 
-IdemGate is a reverse-proxy sidecar that handles request idempotency and multi-tenant rate limiting for HTTP services. It implements the IETF `draft-ietf-httpapi-idempotency-key-header-04` specification.
+<h1 align="center">IdemGate</h1>
 
-When clients retry requests or send parallel requests with the same `Idempotency-Key`, IdemGate intercepts them before they reach your application. It serializes concurrent duplicates, waits for the initial request to finish, caches the response, and serves the identical result to callers. Upstream services process each unique operation once.
+<p align="center">
+  <a href="https://github.com/alexandrmotologa/idemgate/actions"><img src="https://github.com/alexandrmotologa/idemgate/actions/workflows/ci.yml/badge.svg" alt="Build Status" /></a>
+  <img src="https://img.shields.io/badge/Java-21%20LTS-orange.svg" alt="Java 21" />
+  <img src="https://img.shields.io/badge/Spring%20Boot-3.3.3-brightgreen.svg" alt="Spring Boot" />
+  <img src="https://img.shields.io/badge/IETF-RFC%20Draft--04-blue.svg" alt="IETF Draft 04" />
+  <img src="https://img.shields.io/badge/Architecture-Reactive%20Sidecar-purple.svg" alt="Sidecar" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
+</p>
+
+<p align="center">
+  Distributed idempotency proxy and multi-tenant rate-limiting sidecar for HTTP services.<br>
+  Implements IETF Draft-04, concurrency lock serialization, SHA-256 fingerprinting, and RFC 7807 error details.
+</p>
+
+When clients retry requests or send parallel requests with the same `Idempotency-Key`, IdemGate intercepts them before they reach upstream applications. It serializes concurrent duplicates, waits for the initial request to finish, caches the response, and serves the identical result to callers. Upstream services process each unique operation once.
 
 ```
                     +---------------------------------------+
