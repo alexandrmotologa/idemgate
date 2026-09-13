@@ -35,3 +35,6 @@ Thumbs.db
 ### Application Logs ###
 *.log
 logs/
+
+# Master demo video recording
+*.mp4

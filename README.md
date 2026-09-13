@@ -18,6 +18,10 @@
   Implements IETF Draft-04, concurrency lock serialization, SHA-256 fingerprinting, and RFC 7807 error details.
 </p>
 
+<p align="center">
+  <img src="docs/images/idemgate_demo.gif" alt="IdemGate Interactive Demo" width="850" />
+</p>
+
 When clients retry requests or send parallel requests with the same `Idempotency-Key`, IdemGate intercepts them before they reach upstream applications. It serializes concurrent duplicates, waits for the initial request to finish, caches the response, and serves the identical result to callers. Upstream services process each unique operation once.
 
 ```
