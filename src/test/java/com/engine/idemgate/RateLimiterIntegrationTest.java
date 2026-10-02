@@ -52,21 +52,25 @@ class RateLimiterIntegrationTest {
     @Test
     @DisplayName("Should replenish tokens over time")
     void shouldReplenishTokensOverTime() throws InterruptedException {
-        String tenantId = "tenant-replenish-test";
+        String tenantId = "tenant-replenish-test-" + System.nanoTime();
         long capacity = 2;
-        long refillRate = 10; // 10 tokens per second (fast refill for testing)
+        long refillRate = 2; // 2 tokens per second (1 token per 500ms)
 
-        // Drain bucket
-        rateLimiter.tryAcquire(tenantId, capacity, refillRate, 1).block();
-        rateLimiter.tryAcquire(tenantId, capacity, refillRate, 1).block();
+        // Drain entire bucket in one operation
+        RateLimitResult drain = rateLimiter.tryAcquire(tenantId, capacity, refillRate, 2).block();
+        assertThat(drain).isNotNull();
+        assertThat(drain.isAllowed()).isTrue();
 
+        // Immediate next request must be throttled
         RateLimitResult exhausted = rateLimiter.tryAcquire(tenantId, capacity, refillRate, 1).block();
+        assertThat(exhausted).isNotNull();
         assertThat(exhausted.isAllowed()).isFalse();
 
-        // Wait 250ms -> should replenish at least 2 tokens (0.25s * 10 = 2.5 tokens)
-        Thread.sleep(250);
+        // Wait 600ms -> replenishes at least 1.2 tokens
+        Thread.sleep(600);
 
         RateLimitResult replenished = rateLimiter.tryAcquire(tenantId, capacity, refillRate, 1).block();
+        assertThat(replenished).isNotNull();
         assertThat(replenished.isAllowed()).isTrue();
     }
 }
