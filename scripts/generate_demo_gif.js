@@ -2,23 +2,48 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const puppeteer = require(path.resolve(__dirname, 'node_modules/puppeteer'));
+
+let puppeteer;
+try {
+  puppeteer = require('puppeteer');
+} catch (e) {
+  puppeteer = require(path.resolve(__dirname, 'node_modules/puppeteer'));
+}
 
 const PORT = 8098;
-const HTML_FILE = path.resolve(__dirname, 'idemgate/src/main/resources/static/dashboard.html');
-const IMAGES_DIR = path.resolve(__dirname, 'idemgate/docs/images');
-const FRAMES_DIR = path.resolve(__dirname, '.frames_idemgate');
+const BASE_DIR = path.resolve(__dirname, '..');
+const HTML_FILE = path.join(BASE_DIR, 'src/main/resources/static/dashboard.html');
+const IMAGES_DIR = path.join(BASE_DIR, 'docs/images');
+const FRAMES_DIR = path.join(BASE_DIR, '.frames_idemgate');
 const OUTPUT_GIF = path.join(IMAGES_DIR, 'idemgate_demo.gif');
+const OUTPUT_OVERVIEW = path.join(IMAGES_DIR, 'dashboard-live-overview.png');
+const OUTPUT_MODAL = path.join(IMAGES_DIR, 'dashboard-inspect-modal.png');
+
+const MTLG_SITE_IMAGES = 'B:/workgit/mtlg-site/images';
 
 let state = {
   stats: {
-    totalRequests: 142,
-    cacheHitRatioPercent: 38.2,
-    cacheHits: 54,
-    cacheMisses: 88,
-    raceConditionsSerialized: 19,
-    activeCachedKeys: 12,
-    rateLimitedRequests: 3
+    storageType: 'memory',
+    totalRequests: 184,
+    cacheHitRatioPercent: 42.6,
+    cacheHits: 78,
+    cacheMisses: 106,
+    raceConditionsSerialized: 24,
+    activeCachedKeys: 16,
+    rateLimitedRequests: 5,
+    meanProxyLatencyMs: 4.82,
+    maxProxyLatencyMs: 28.4
+  },
+  config: {
+    storageType: 'memory',
+    upstreamUrl: 'http://localhost:8080/upstream-mock',
+    idempotencyHeader: 'Idempotency-Key',
+    lockTtlSeconds: 30,
+    recordTtlSeconds: 86400,
+    maxBodySizeBytes: 10485760,
+    rateLimitEnabled: true,
+    defaultCapacity: 100,
+    defaultRefillRate: 20
   },
   keys: [
     {
@@ -37,7 +62,7 @@ let state = {
     },
     {
       key: 'charge_cust_8832',
-      status: 'IN-FLIGHT',
+      status: 'IN_FLIGHT',
       fingerprint: '9e120da4b8716b23ce81',
       statusCode: null,
       createdAt: new Date(Date.now() - 15000).toISOString()
@@ -61,13 +86,18 @@ function createServer() {
     const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
     const pathname = parsedUrl.pathname;
 
-    // CORS & Headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
 
     if (pathname === '/' || pathname === '/idemgate/dashboard' || pathname === '/dashboard.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(htmlContent);
+      return;
+    }
+
+    if (pathname === '/idemgate/api/v1/config') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(state.config));
       return;
     }
 
@@ -88,23 +118,26 @@ function createServer() {
       const found = state.keys.find(k => k.key === key) || {
         key,
         status: 'RESOLVED',
-        statusCode: 200,
+        statusCode: 201,
         fingerprint: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
       };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        idempotencyKey: found.key,
+        key: found.key,
         status: found.status,
-        statusCode: found.statusCode || 200,
+        statusCode: found.statusCode || 201,
         fingerprint: found.fingerprint || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
         tenantId: 'tenant-acme-corp',
-        ttlRemainingSeconds: 86340,
+        hasCachedResponse: true,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
         cachedResponse: {
           orderId: '101',
-          status: 'CONFIRMED',
-          transactionId: 'txn_89412a8'
-        },
-        traceId: '4bf92f3577b34da6a3ce929d0e0e4736'
+          amount: 199.99,
+          currency: 'USD',
+          status: 'SUCCESS',
+          transactionId: 'txn_9921fa44'
+        }
       }, null, 2));
       return;
     }
@@ -136,22 +169,25 @@ function createServer() {
           ).toFixed(1);
         }
 
-        const statusCode = isReplay ? 200 : 201;
-        const latency = isReplay ? 2 : 14;
+        const statusCode = 201;
+        const latency = isReplay ? 1 : 12;
 
         res.writeHead(statusCode, {
           'Content-Type': 'application/json',
           'Idempotent-Replayed': isReplay ? 'true' : 'false',
           'X-IdemGate-Request-Id': isReplay ? 'idm_req_108bb4e' : 'idm_req_992f01a',
-          'X-IdemGate-Latency-Ms': String(latency)
+          'X-IdemGate-Latency-Ms': String(latency),
+          'X-RateLimit-Remaining': '98'
         });
 
         res.end(JSON.stringify({
           orderId: '101',
-          status: 'CONFIRMED',
-          transactionId: 'txn_89412a8',
-          note: isReplay ? 'Served verbatim from distributed cache' : 'Processed by upstream billing engine'
-        }));
+          amount: 199.99,
+          currency: 'USD',
+          status: 'SUCCESS',
+          transactionId: 'txn_9921fa44',
+          note: isReplay ? 'Served verbatim from in-memory cache' : 'Processed by upstream billing engine'
+        }, null, 2));
       });
       return;
     }
@@ -170,21 +206,31 @@ async function record() {
     fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
   }
   fs.mkdirSync(FRAMES_DIR, { recursive: true });
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
   const server = createServer();
   await new Promise(resolve => server.listen(PORT, resolve));
   console.log(`📡 Mock IdemGate server listening on http://127.0.0.1:${PORT}`);
 
   console.log('🚀 Launching Puppeteer...');
+  const chromePath = fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')
+    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    : undefined;
+
   const browser = await puppeteer.launch({
     headless: 'new',
+    executablePath: chromePath,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 1200, height: 750, deviceScaleFactor: 1 });
+  await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });
   await page.goto(`http://127.0.0.1:${PORT}/dashboard.html`, { waitUntil: 'networkidle0' });
   await sleep(1000);
+
+  // Take High-Res Overview Screenshot (dashboard-live-overview.png)
+  console.log('📸 Capturing high-res dashboard-live-overview.png...');
+  await page.screenshot({ path: OUTPUT_OVERVIEW, fullPage: false });
 
   let frameCount = 0;
   let recording = true;
@@ -198,7 +244,7 @@ async function record() {
           fullPage: false
         });
       } catch (err) {}
-      await sleep(100); // 10 FPS
+      await sleep(100);
     }
   };
 
@@ -206,7 +252,7 @@ async function record() {
 
   // 1. Initial view: show live stats and key register
   console.log('Action 1: Showing dashboard overview...');
-  await sleep(1800);
+  await sleep(1500);
 
   // 2. Click Send Request in simulator (First call: Miss -> Upstream processed)
   console.log('Action 2: Submitting initial order request (Cache Miss)...');
@@ -214,14 +260,14 @@ async function record() {
   if (submitBtn) {
     await submitBtn.click();
   }
-  await sleep(2800);
+  await sleep(2500);
 
   // 3. Click Send Request AGAIN with the exact same key (Second call: Hit -> Instant Replayed)
   console.log('Action 3: Submitting retry with same key (Cache Hit & Replay)...');
   if (submitBtn) {
     await submitBtn.click();
   }
-  await sleep(2800);
+  await sleep(2500);
 
   // 4. Click Inspect on the newly added demo key in the table
   console.log('Action 4: Inspecting key details in modal...');
@@ -229,7 +275,12 @@ async function record() {
   if (inspectBtns.length > 0) {
     await inspectBtns[0].click();
   }
-  await sleep(3000);
+  await sleep(1000);
+
+  // Capture High-Res Modal Screenshot (dashboard-inspect-modal.png)
+  console.log('📸 Capturing high-res dashboard-inspect-modal.png...');
+  await page.screenshot({ path: OUTPUT_MODAL, fullPage: false });
+  await sleep(2000);
 
   // 5. Close the inspect modal
   console.log('Action 5: Closing modal...');
@@ -237,7 +288,7 @@ async function record() {
   if (closeBtn) {
     await closeBtn.click();
   }
-  await sleep(1800);
+  await sleep(1500);
 
   // Stop recording
   recording = false;
@@ -246,11 +297,8 @@ async function record() {
   server.close();
 
   console.log(`🎬 Captured ${frameCount} frames. Encoding optimized GIF with FFmpeg...`);
-  if (!fs.existsSync(IMAGES_DIR)) {
-    fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  }
 
-  const ffmpegCmd = `ffmpeg -y -framerate 8 -i "${path.join(FRAMES_DIR, 'frame_%05d.png')}" -vf "scale=880:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" -loop 0 "${OUTPUT_GIF}"`;
+  const ffmpegCmd = `ffmpeg -y -framerate 8 -i "${path.join(FRAMES_DIR, 'frame_%05d.png')}" -vf "scale=920:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" -loop 0 "${OUTPUT_GIF}"`;
 
   execSync(ffmpegCmd, { stdio: 'inherit' });
 
@@ -259,6 +307,15 @@ async function record() {
 
   // Clean frames
   fs.rmSync(FRAMES_DIR, { recursive: true, force: true });
+
+  // Sync to MTLG Site if exists
+  if (fs.existsSync(MTLG_SITE_IMAGES)) {
+    console.log('🔄 Syncing updated assets to mtlg-site/images...');
+    fs.copyFileSync(OUTPUT_OVERVIEW, path.join(MTLG_SITE_IMAGES, 'idemgate-1.png'));
+    fs.copyFileSync(OUTPUT_MODAL, path.join(MTLG_SITE_IMAGES, 'idemgate-2.png'));
+    fs.copyFileSync(OUTPUT_GIF, path.join(MTLG_SITE_IMAGES, 'idemgate-3.gif'));
+    console.log('✅ Synchronized to mtlg-site successfully!');
+  }
 }
 
 record().catch(err => {

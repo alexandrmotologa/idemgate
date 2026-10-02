@@ -38,3 +38,12 @@ logs/
 
 # Master demo video recording
 *.mp4
+
+### Node / Scratch Artifacts ###
+node_modules/
+package.json
+package-lock.json
+.frames*/
+scripts/node_modules/
+scripts/package.json
+scripts/package-lock.json
