@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Embedded mock service used for integration tests, benchmarks, and local development.
- * Tracks invocation counts to verify exact-once processing.
+ * Supports multiple HTTP methods (GET, POST, PUT, PATCH, DELETE) and mock response customization.
  */
 @RestController
 @RequestMapping("/upstream-mock")
@@ -28,14 +28,51 @@ public class MockUpstreamController {
     private final AtomicInteger invocationCounter = new AtomicInteger(0);
     private final Map<String, AtomicInteger> endpointCounters = new ConcurrentHashMap<>();
 
-    @PostMapping(value = "/**", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Map<String, Object>>> handleGenericPost(
+    @GetMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> handleGet(
+            @RequestHeader HttpHeaders headers,
+            @RequestParam(value = "delay", defaultValue = "0") long delayMs) {
+        return buildMockResponse(null, headers, delayMs);
+    }
+
+    @PostMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> handlePost(
             @RequestBody(required = false) Map<String, Object> body,
             @RequestHeader HttpHeaders headers,
             @RequestParam(value = "delay", defaultValue = "0") long delayMs) {
+        return buildMockResponse(body, headers, delayMs);
+    }
+
+    @PutMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> handlePut(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader HttpHeaders headers,
+            @RequestParam(value = "delay", defaultValue = "0") long delayMs) {
+        return buildMockResponse(body, headers, delayMs);
+    }
+
+    @PatchMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> handlePatch(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader HttpHeaders headers,
+            @RequestParam(value = "delay", defaultValue = "0") long delayMs) {
+        return buildMockResponse(body, headers, delayMs);
+    }
+
+    @DeleteMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> handleDelete(
+            @RequestHeader HttpHeaders headers,
+            @RequestParam(value = "delay", defaultValue = "0") long delayMs) {
+        return buildMockResponse(null, headers, delayMs);
+    }
+
+    private Mono<ResponseEntity<Map<String, Object>>> buildMockResponse(
+            Map<String, Object> body,
+            HttpHeaders headers,
+            long delayMs) {
 
         int currentCount = invocationCounter.incrementAndGet();
-        log.info("MockUpstream received POST request. Total invocations: {}", currentCount);
+        log.info("MockUpstream received request. Total invocations: {}", currentCount);
 
         long effectiveDelay = delayMs;
         String delayHeader = headers.getFirst("X-Mock-Delay");
@@ -46,14 +83,23 @@ public class MockUpstreamController {
             }
         }
 
+        HttpStatus status = HttpStatus.CREATED;
+        String statusHeader = headers.getFirst("X-Mock-Status");
+        if (statusHeader != null && !statusHeader.isBlank()) {
+            try {
+                status = HttpStatus.valueOf(Integer.parseInt(statusHeader));
+            } catch (Exception ignored) {
+            }
+        }
+
         Map<String, Object> responsePayload = Map.of(
-                "status", "SUCCESS",
+                "status", status.is2xxSuccessful() ? "SUCCESS" : "ERROR",
                 "transactionId", UUID.randomUUID().toString(),
                 "upstreamInvocations", currentCount,
                 "receivedData", body != null ? body : Map.of()
         );
 
-        ResponseEntity<Map<String, Object>> response = ResponseEntity.status(HttpStatus.CREATED)
+        ResponseEntity<Map<String, Object>> response = ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("X-Upstream-Server", "idemgate-embedded-mock")
                 .body(responsePayload);

@@ -57,6 +57,82 @@ class ReverseProxyIntegrationTest {
     }
 
     @Test
+    @DisplayName("Should forward safe methods (GET) without acquiring idempotency locks")
+    void shouldForwardSafeMethodsWithoutLocking() {
+        String key = "safe-get-key-" + System.currentTimeMillis();
+
+        webTestClient.get()
+                .uri("/api/v1/items/123")
+                .header("Idempotency-Key", key)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectHeader().doesNotExist("Idempotent-Replayed");
+
+        // Inspect key - should not exist in storage because safe methods bypass idempotency state
+        webTestClient.get()
+                .uri("/idemgate/api/v1/inspect/" + key)
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    @DisplayName("Should reject requests with invalid characters (spaces) in Idempotency-Key with 400 Bad Request")
+    void shouldRejectInvalidKeyCharacters() {
+        String invalidKey = "invalid key with spaces";
+
+        webTestClient.post()
+                .uri("/api/v1/orders")
+                .header("Idempotency-Key", invalidKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"orderId\": \"INV-1\"}")
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.title").isEqualTo("Invalid Idempotency-Key Format");
+    }
+
+    @Test
+    @DisplayName("Should not cache transient 5xx server errors as RESOLVED and allow retries")
+    void shouldNotCacheTransient5xxErrors() {
+        String key = "5xx-retry-key-" + System.currentTimeMillis();
+
+        // 1. Request upstream with simulated 500 error
+        webTestClient.post()
+                .uri("/api/v1/orders")
+                .header("Idempotency-Key", key)
+                .header("X-Mock-Status", "500")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"orderId\": \"FAIL-500\"}")
+                .exchange()
+                .expectStatus().isEqualTo(500)
+                .expectHeader().valueEquals("Idempotent-Replayed", "false");
+
+        // 2. Key must NOT be in cache as RESOLVED
+        webTestClient.get()
+                .uri("/idemgate/api/v1/inspect/" + key)
+                .exchange()
+                .expectStatus().isNotFound();
+
+        // 3. Retry request with 201 status -> should reach upstream again and succeed
+        webTestClient.post()
+                .uri("/api/v1/orders")
+                .header("Idempotency-Key", key)
+                .header("X-Mock-Status", "201")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"orderId\": \"FAIL-500\"}")
+                .exchange()
+                .expectStatus().isCreated()
+                .expectHeader().valueEquals("Idempotent-Replayed", "false");
+
+        // Upstream should have been called twice (once for 500, once for 201)
+        var stats = mockUpstreamController.getInvocationStats().block();
+        assertThat(stats).isNotNull();
+        assertThat(stats.get("totalInvocations")).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("Should return health status on liveness and readiness probes")
     void shouldReturnHealthStatus() {
         webTestClient.get()

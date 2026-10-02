@@ -17,6 +17,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
@@ -29,7 +31,7 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Core engine enforcing the IETF Idempotency-Key specification, fingerprint digest validation,
- * distributed locking, and concurrent race serialization.
+ * distributed locking, safe method pass-through, transient 5xx non-caching, and concurrent race serialization.
  */
 @Component
 public class IdempotencyEngine {
@@ -42,6 +44,15 @@ public class IdempotencyEngine {
             URI.create("https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-04#section-2.1");
     private static final URI RFC_GATEWAY_TIMEOUT =
             URI.create("https://datatracker.ietf.org/doc/html/rfc7231#section-6.6.5");
+    private static final URI RFC_BAD_GATEWAY =
+            URI.create("https://datatracker.ietf.org/doc/html/rfc7231#section-6.6.3");
+
+    private static final Set<HttpMethod> SAFE_METHODS = Set.of(
+            HttpMethod.GET,
+            HttpMethod.HEAD,
+            HttpMethod.OPTIONS,
+            HttpMethod.TRACE
+    );
 
     private final IdempotencyStore store;
     private final UpstreamDispatcher upstreamDispatcher;
@@ -73,6 +84,11 @@ public class IdempotencyEngine {
             HttpHeaders headers,
             byte[] body) {
 
+        // RFC Section 2.1: Safe methods (GET, HEAD, OPTIONS) do not require idempotency processing
+        if (method != null && SAFE_METHODS.contains(method)) {
+            return upstreamDispatcher.forward(method, path, query, headers, body);
+        }
+
         String headerName = properties.getIdempotency().getHeaderName();
         String idempotencyKey = headers.getFirst(headerName);
 
@@ -93,13 +109,13 @@ public class IdempotencyEngine {
             return upstreamDispatcher.forward(method, path, query, headers, body);
         }
 
-        // Validate key length and format
-        if (idempotencyKey.length() > 256) {
+        // Validate key length and RFC printable characters (VCHAR: 0x21 to 0x7E)
+        if (idempotencyKey.length() > 256 || !isValidRfcKey(idempotencyKey)) {
             return Mono.just(createProblemDetailResponse(
                     HttpStatus.BAD_REQUEST,
                     RFC_SECTION_2_1_INVALID_KEY,
-                    "Invalid Idempotency-Key Length",
-                    "Idempotency-Key exceeds the maximum allowed length of 256 characters.",
+                    "Invalid Idempotency-Key Format",
+                    "Idempotency-Key must contain only printable ASCII characters and not exceed 256 characters.",
                     path
             ));
         }
@@ -113,7 +129,7 @@ public class IdempotencyEngine {
 
         return store.acquireInFlight(idempotencyKey, fingerprint, lockTtl)
                 .flatMap(result -> switch (result.getStatus()) {
-                    case ACQUIRED -> executePrimaryRequest(idempotencyKey, fingerprint, method, path, query, headers, body, recordTtl);
+                    case ACQUIRED -> executePrimaryRequest(idempotencyKey, fingerprint, method, path, query, headers, body, recordTtl, path);
                     case ALREADY_RESOLVED -> replayCachedRecord(result.getExistingRecord(), fingerprint, path);
                     case CONFLICT_IN_FLIGHT -> awaitInFlightResolution(idempotencyKey, result.getExistingRecord(), fingerprint, path, waitTimeout);
                 });
@@ -127,7 +143,8 @@ public class IdempotencyEngine {
             String query,
             HttpHeaders headers,
             byte[] body,
-            int recordTtl) {
+            int recordTtl,
+            String requestPath) {
 
         log.debug("Executing primary upstream request for idempotency key: {}", key);
         metrics.incrementCacheMiss();
@@ -137,17 +154,41 @@ public class IdempotencyEngine {
                 .flatMap(response -> {
                     metrics.recordUpstreamLatency(System.nanoTime() - startNanos);
 
-                    // Add Idempotent-Replayed: false header
+                    int statusCode = response.getStatusCode();
                     CachedHttpResponse modifiedResponse = appendHeader(response, "Idempotent-Replayed", "false");
 
-                    // Save as RESOLVED in cache
+                    // RFC Section 2.6: Do NOT cache transient 5xx server errors as RESOLVED.
+                    // Release lock so subsequent retries are allowed to hit upstream again.
+                    if (statusCode >= 500) {
+                        log.warn("Upstream returned 5xx server error ({}) for key: {}. Not caching as RESOLVED.", statusCode, key);
+                        return store.releaseLock(key).thenReturn(modifiedResponse);
+                    }
+
+                    // Save 2xx, 3xx, 4xx as RESOLVED in cache
                     return store.resolve(key, fingerprint, modifiedResponse, recordTtl)
                             .thenReturn(modifiedResponse);
                 })
                 .onErrorResume(error -> {
                     log.error("Upstream execution failed for key: {}. Releasing in-flight lock.", key, error);
                     return store.releaseLock(key)
-                            .then(Mono.error(error));
+                            .then(Mono.defer(() -> {
+                                if (error instanceof TimeoutException) {
+                                    return Mono.just(createProblemDetailResponse(
+                                            HttpStatus.GATEWAY_TIMEOUT,
+                                            RFC_GATEWAY_TIMEOUT,
+                                            "Gateway Timeout",
+                                            "Upstream service timed out while processing request.",
+                                            requestPath
+                                    ));
+                                }
+                                return Mono.just(createProblemDetailResponse(
+                                        HttpStatus.BAD_GATEWAY,
+                                        RFC_BAD_GATEWAY,
+                                        "Bad Gateway",
+                                        "Unable to reach upstream service: " + (error.getMessage() != null ? error.getMessage() : "Connection failed"),
+                                        requestPath
+                                ));
+                            }));
                 });
     }
 
@@ -233,6 +274,17 @@ public class IdempotencyEngine {
             }
         }
         return false;
+    }
+
+    private boolean isValidRfcKey(String key) {
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            // RFC 0x21 ('!') to 0x7E ('~')
+            if (c < 0x21 || c > 0x7E) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private CachedHttpResponse appendHeader(CachedHttpResponse response, String headerName, String headerValue) {

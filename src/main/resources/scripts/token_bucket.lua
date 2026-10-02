@@ -35,16 +35,19 @@ if tokens >= requested then
     allowed = 1
     remaining = tokens - requested
     tokens = remaining
-    redis.call('HMSET', key, 'tokens', tokens, 'last_updated_ms', last_updated_ms)
-    -- Expire bucket if inactive for 1 hour
+    redis.call('HSET', key, 'tokens', tokens, 'last_updated_ms', last_updated_ms)
     redis.call('EXPIRE', key, 3600)
+    -- Milliseconds until bucket refills back to full capacity
+    reset_ms = math.ceil(((capacity - tokens) / refill_rate) * 1000)
 else
     allowed = 0
     remaining = tokens
-    -- Time until at least 'requested' tokens are available
+    redis.call('HSET', key, 'tokens', tokens, 'last_updated_ms', last_updated_ms)
+    redis.call('EXPIRE', key, 3600)
+    -- Milliseconds until at least 'requested' tokens become available
     local missing = requested - tokens
     reset_ms = math.ceil((missing / refill_rate) * 1000)
 end
 
 -- Return: allowed (1 or 0), remaining tokens (integer), reset time in milliseconds
-return { allowed, math.floor(remaining), reset_ms }
+return { allowed, math.floor(remaining), math.max(1000, reset_ms) }

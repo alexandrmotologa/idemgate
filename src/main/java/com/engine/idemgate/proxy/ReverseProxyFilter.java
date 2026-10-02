@@ -35,7 +35,7 @@ import java.util.Set;
 
 /**
  * High-throughput reactive WebFilter that acts as the entrypoint for proxied traffic,
- * enforcing rate limiting, idempotency validation, concurrency serialization, and caching.
+ * enforcing rate limiting, idempotency validation, body size checks, concurrency serialization, and caching.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE - 10)
@@ -48,6 +48,9 @@ public class ReverseProxyFilter implements WebFilter {
             "/upstream-mock",
             "/idemgate"
     );
+
+    private static final URI RFC_PAYLOAD_TOO_LARGE =
+            URI.create("https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.11");
 
     private final IdempotencyEngine idempotencyEngine;
     private final RateLimiterService rateLimiterService;
@@ -98,6 +101,15 @@ public class ReverseProxyFilter implements WebFilter {
         response.getHeaders().set("X-IdemGate-Request-Id", effectiveRequestId);
         response.getHeaders().set("traceparent", effectiveTraceparent);
 
+        // Check Content-Length header against max allowed size early
+        long contentLength = request.getHeaders().getContentLength();
+        long maxSizeBytes = properties.getIdempotency().getMaxBodySizeBytes();
+        if (contentLength > 0 && contentLength > maxSizeBytes) {
+            long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
+            response.getHeaders().set("X-IdemGate-Latency-Ms", String.valueOf(durationMs));
+            return writePayloadTooLargeResponse(response, path, contentLength, maxSizeBytes);
+        }
+
         // 1. Rate Limiting Evaluation
         return rateLimiterService.checkRateLimit(request)
                 .flatMap(rateResult -> {
@@ -109,9 +121,15 @@ public class ReverseProxyFilter implements WebFilter {
                         return writeRateLimitExceededResponse(response, path, rateResult);
                     }
 
-                    // 2. Read Request Body
-                    return extractBodyBytes(request)
+                    // 2. Read Request Body with Size Guard
+                    return extractBodyBytes(request, maxSizeBytes)
                             .flatMap(bodyBytes -> {
+                                if (bodyBytes.length > maxSizeBytes) {
+                                    long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
+                                    response.getHeaders().set("X-IdemGate-Latency-Ms", String.valueOf(durationMs));
+                                    return writePayloadTooLargeResponse(response, path, bodyBytes.length, maxSizeBytes);
+                                }
+
                                 HttpMethod method = request.getMethod();
                                 String query = request.getURI().getRawQuery();
                                 HttpHeaders headers = request.getHeaders();
@@ -128,7 +146,7 @@ public class ReverseProxyFilter implements WebFilter {
                 .doFinally(signalType -> metrics.recordProxyLatency(System.nanoTime() - startNanos));
     }
 
-    private Mono<byte[]> extractBodyBytes(ServerHttpRequest request) {
+    private Mono<byte[]> extractBodyBytes(ServerHttpRequest request, long maxSizeBytes) {
         return DataBufferUtils.join(request.getBody())
                 .map(dataBuffer -> {
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
@@ -166,6 +184,29 @@ public class ReverseProxyFilter implements WebFilter {
             payload = objectMapper.writeValueAsBytes(problem);
         } catch (JsonProcessingException e) {
             payload = "{\"title\":\"Too Many Requests\"}".getBytes(StandardCharsets.UTF_8);
+        }
+
+        DataBuffer buffer = response.bufferFactory().wrap(payload);
+        return response.writeWith(Mono.just(buffer));
+    }
+
+    private Mono<Void> writePayloadTooLargeResponse(ServerHttpResponse response, String path, long actualSize, long maxSize) {
+        response.setStatusCode(HttpStatus.PAYLOAD_TOO_LARGE);
+        response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+
+        ProblemDetailDto problem = ProblemDetailDto.of(
+                RFC_PAYLOAD_TOO_LARGE,
+                "Payload Too Large",
+                HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                "Request payload size (" + actualSize + " bytes) exceeds maximum permitted limit (" + maxSize + " bytes).",
+                path
+        );
+
+        byte[] payload;
+        try {
+            payload = objectMapper.writeValueAsBytes(problem);
+        } catch (JsonProcessingException e) {
+            payload = "{\"title\":\"Payload Too Large\"}".getBytes(StandardCharsets.UTF_8);
         }
 
         DataBuffer buffer = response.bufferFactory().wrap(payload);

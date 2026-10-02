@@ -11,12 +11,17 @@ import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -90,10 +95,14 @@ public class RedisIdempotencyStore implements IdempotencyStore {
             RTopic topic = redissonClient.getTopic(TOPIC_PREFIX + key);
             topic.publish(key);
 
-            // Unlock
+            // Release lock across reactive thread boundaries safely
             RLock lock = redissonClient.getLock(LOCK_PREFIX + key);
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
+            if (lock.isLocked()) {
+                try {
+                    lock.forceUnlock();
+                } catch (Exception e) {
+                    log.debug("Lock for key {} was already released: {}", key, e.getMessage());
+                }
             }
         });
     }
@@ -103,8 +112,12 @@ public class RedisIdempotencyStore implements IdempotencyStore {
         return Mono.fromRunnable(() -> {
             redisTemplate.delete(KEY_PREFIX + key);
             RLock lock = redissonClient.getLock(LOCK_PREFIX + key);
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
+            if (lock.isLocked()) {
+                try {
+                    lock.forceUnlock();
+                } catch (Exception e) {
+                    log.debug("Lock for key {} was already released: {}", key, e.getMessage());
+                }
             }
         });
     }
@@ -132,6 +145,12 @@ public class RedisIdempotencyStore implements IdempotencyStore {
             }
         });
 
+        // Double-check immediately after attaching listener to prevent lost wakeups in race windows
+        IdempotencyRecord raceCheck = redisTemplate.opsForValue().get(KEY_PREFIX + key);
+        if (raceCheck != null && raceCheck.getStatus() == IdempotencyStatus.RESOLVED && raceCheck.getResponse() != null) {
+            notificationFuture.complete(raceCheck.getResponse());
+        }
+
         return Mono.fromFuture(notificationFuture)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .doFinally(signalType -> topic.removeListener(listenerId));
@@ -142,22 +161,51 @@ public class RedisIdempotencyStore implements IdempotencyStore {
         return Mono.fromCallable(() -> {
             Boolean deleted = redisTemplate.delete(KEY_PREFIX + key);
             RLock lock = redissonClient.getLock(LOCK_PREFIX + key);
-            if (lock.isLocked() && lock.isHeldByCurrentThread()) {
-                lock.unlock();
+            if (lock.isLocked()) {
+                try {
+                    lock.forceUnlock();
+                } catch (Exception ignored) {
+                }
             }
             return Boolean.TRUE.equals(deleted);
         });
     }
 
     @Override
-    public Mono<java.util.List<IdempotencyRecord>> listKeys(int limit) {
+    public Mono<Long> evictAll() {
         return Mono.fromCallable(() -> {
-            java.util.Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-            if (keys == null || keys.isEmpty()) {
-                return java.util.Collections.emptyList();
+            List<String> keysToDelete = new ArrayList<>();
+            ScanOptions scanOptions = ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(200).build();
+            try (Cursor<String> cursor = redisTemplate.scan(scanOptions)) {
+                while (cursor.hasNext()) {
+                    keysToDelete.add(cursor.next());
+                }
             }
-            java.util.List<IdempotencyRecord> records = new java.util.ArrayList<>();
-            for (String redisKey : keys) {
+            if (keysToDelete.isEmpty()) {
+                return 0L;
+            }
+            Long deletedCount = redisTemplate.delete(keysToDelete);
+            return deletedCount != null ? deletedCount : 0L;
+        });
+    }
+
+    @Override
+    public Mono<List<IdempotencyRecord>> listKeys(int limit) {
+        return Mono.fromCallable(() -> {
+            List<String> matchingKeys = new ArrayList<>();
+            ScanOptions scanOptions = ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(Math.min(limit, 100)).build();
+            try (Cursor<String> cursor = redisTemplate.scan(scanOptions)) {
+                while (cursor.hasNext() && matchingKeys.size() < limit) {
+                    matchingKeys.add(cursor.next());
+                }
+            }
+
+            if (matchingKeys.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            List<IdempotencyRecord> records = new ArrayList<>();
+            for (String redisKey : matchingKeys) {
                 IdempotencyRecord rec = redisTemplate.opsForValue().get(redisKey);
                 if (rec != null && !rec.isExpired()) {
                     records.add(rec);

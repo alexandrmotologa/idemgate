@@ -14,6 +14,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -145,9 +147,24 @@ public class InMemoryIdempotencyStore implements IdempotencyStore {
     }
 
     @Override
-    public Mono<java.util.List<IdempotencyRecord>> listKeys(int limit) {
+    public Mono<Long> evictAll() {
         return Mono.fromCallable(() -> {
-            java.util.List<IdempotencyRecord> records = new java.util.ArrayList<>();
+            synchronized (lock) {
+                long count = cache.estimatedSize();
+                cache.invalidateAll();
+                for (CompletableFuture<CachedHttpResponse> future : inFlightWaiters.values()) {
+                    future.cancel(true);
+                }
+                inFlightWaiters.clear();
+                return count;
+            }
+        });
+    }
+
+    @Override
+    public Mono<List<IdempotencyRecord>> listKeys(int limit) {
+        return Mono.fromCallable(() -> {
+            List<IdempotencyRecord> records = new ArrayList<>();
             for (IdempotencyRecord record : cache.asMap().values()) {
                 if (!record.isExpired()) {
                     records.add(record);

@@ -4,10 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IdemGate Console — Distributed Idempotency & Rate Limiting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #090d16;
-            --bg-surface: #111827;
+            --bg-base: #07090e;
+            --bg-surface: #0f172a;
             --bg-surface-elevated: #1e293b;
             --border-subtle: #334155;
             --border-focus: #38bdf8;
@@ -18,6 +21,7 @@
             --accent-amber: #f59e0b;
             --accent-rose: #f43f5e;
             --accent-purple: #a855f7;
+            --accent-cyan: #06b6d4;
             --radius-md: 10px;
             --radius-lg: 16px;
         }
@@ -26,7 +30,11 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        code, pre, .mono {
+            font-family: 'JetBrains Mono', monospace;
         }
 
         body {
@@ -35,10 +43,11 @@
             min-height: 100vh;
             padding: 24px;
             line-height: 1.5;
+            background-image: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.04) 0%, transparent 60%);
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1440px;
             margin: 0 auto;
         }
 
@@ -46,9 +55,11 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 28px;
-            padding-bottom: 20px;
+            margin-bottom: 24px;
+            padding-bottom: 18px;
             border-bottom: 1px solid var(--border-subtle);
+            flex-wrap: wrap;
+            gap: 16px;
         }
 
         .brand-title {
@@ -62,9 +73,20 @@
             color: #fff;
             padding: 4px 10px;
             border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .storage-badge {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            padding: 4px 10px;
+            border-radius: 6px;
             font-size: 0.75rem;
             font-weight: 700;
-            letter-spacing: 0.05em;
             text-transform: uppercase;
         }
 
@@ -72,6 +94,7 @@
             display: flex;
             gap: 12px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .status-indicator {
@@ -103,8 +126,11 @@
             border-radius: var(--radius-md);
             cursor: pointer;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .btn:hover {
@@ -113,41 +139,43 @@
         }
 
         .btn-danger {
-            background: rgba(244, 63, 94, 0.15);
+            background: rgba(244, 63, 94, 0.12);
             color: var(--accent-rose);
             border-color: rgba(244, 63, 94, 0.3);
         }
 
         .btn-danger:hover {
-            background: rgba(244, 63, 94, 0.3);
+            background: rgba(244, 63, 94, 0.25);
             border-color: var(--accent-rose);
         }
 
         .btn-primary {
-            background: #0284c7;
+            background: linear-gradient(135deg, #0284c7, #2563eb);
             color: #fff;
             border-color: #0284c7;
+            font-weight: 700;
         }
 
         .btn-primary:hover {
-            background: #0369a1;
+            background: linear-gradient(135deg, #0369a1, #1d4ed8);
         }
 
         /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
-            margin-bottom: 28px;
+            margin-bottom: 24px;
         }
 
         .stat-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-lg);
-            padding: 18px 20px;
+            padding: 16px 18px;
             position: relative;
             overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
         }
 
         .stat-card::before {
@@ -164,24 +192,25 @@
         .stat-card.purple::before { background: var(--accent-purple); }
         .stat-card.amber::before { background: var(--accent-amber); }
         .stat-card.rose::before { background: var(--accent-rose); }
+        .stat-card.cyan::before { background: var(--accent-cyan); }
 
         .stat-label {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-muted);
             text-transform: uppercase;
-            font-weight: 600;
-            letter-spacing: 0.04em;
-            margin-bottom: 8px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
         }
 
         .stat-value {
-            font-size: 1.9rem;
+            font-size: 1.75rem;
             font-weight: 800;
             letter-spacing: -0.02em;
         }
 
         .stat-subtext {
-            font-size: 0.78rem;
+            font-size: 0.74rem;
             color: var(--text-muted);
             margin-top: 4px;
         }
@@ -189,11 +218,11 @@
         /* Main Section Grid */
         .main-grid {
             display: grid;
-            grid-template-columns: 1fr 380px;
+            grid-template-columns: 1fr 420px;
             gap: 24px;
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 1080px) {
             .main-grid {
                 grid-template-columns: 1fr;
             }
@@ -204,6 +233,7 @@
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-lg);
             padding: 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.25);
         }
 
         .panel-header {
@@ -211,22 +241,34 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
         .panel-title {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
             font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
         }
 
         .search-bar {
-            width: 100%;
+            flex: 1;
+            min-width: 200px;
             background: var(--bg-base);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            padding: 10px 14px;
+            padding: 8px 12px;
             color: var(--text-main);
-            font-size: 0.9rem;
-            margin-bottom: 16px;
+            font-size: 0.85rem;
         }
 
         .search-bar:focus {
@@ -237,12 +279,14 @@
         /* Table */
         .table-responsive {
             overflow-x: auto;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-subtle);
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             text-align: left;
         }
 
@@ -252,23 +296,26 @@
             padding: 10px 14px;
             font-weight: 600;
             border-bottom: 1px solid var(--border-subtle);
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.04em;
         }
 
         td {
-            padding: 12px 14px;
+            padding: 10px 14px;
             border-bottom: 1px solid rgba(51, 65, 85, 0.4);
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         tr:hover td {
-            background: rgba(30, 41, 59, 0.5);
+            background: rgba(30, 41, 59, 0.6);
         }
 
         .badge {
             display: inline-block;
             padding: 3px 8px;
             border-radius: 6px;
-            font-size: 0.72rem;
+            font-size: 0.70rem;
             font-weight: 700;
             font-family: sans-serif;
             text-transform: uppercase;
@@ -296,29 +343,37 @@
         .sim-form {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 100px 1fr;
+            gap: 8px;
         }
 
         .form-group {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
         }
 
         label {
-            font-size: 0.78rem;
-            font-weight: 600;
+            font-size: 0.72rem;
+            font-weight: 700;
             color: var(--text-muted);
             text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
         input, textarea, select {
             background: var(--bg-base);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            padding: 8px 12px;
+            padding: 8px 10px;
             color: var(--text-main);
-            font-size: 0.85rem;
+            font-size: 0.82rem;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         input:focus, textarea:focus, select:focus {
@@ -332,11 +387,12 @@
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
             padding: 12px;
-            font-family: monospace;
-            font-size: 0.78rem;
-            max-height: 180px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.76rem;
+            max-height: 220px;
             overflow-y: auto;
             white-space: pre-wrap;
+            color: #38bdf8;
         }
 
         /* Modal */
@@ -346,7 +402,8 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
             display: none;
             justify-content: center;
             align-items: center;
@@ -358,9 +415,9 @@
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-lg);
             width: 90%;
-            max-width: 650px;
+            max-width: 680px;
             padding: 24px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.7);
         }
 
         .modal-header {
@@ -377,6 +434,11 @@
             font-size: 1.5rem;
             cursor: pointer;
         }
+
+        .btn-group {
+            display: flex;
+            gap: 6px;
+        }
     </style>
 </head>
 <body>
@@ -384,15 +446,17 @@
 <div class="container">
     <header>
         <div class="brand-title">
-            <h1 style="font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em;">IdemGate</h1>
+            <h1 style="font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em;">IdemGate</h1>
             <span class="brand-badge">Proxy Console</span>
+            <span class="storage-badge" id="storageBadge">Storage: Loading...</span>
         </div>
         <div class="header-controls">
             <div class="status-indicator">
                 <span class="pulse-dot"></span>
                 <span>Active & Healthy</span>
             </div>
-            <button class="btn" onclick="fetchLiveStats(); fetchKeys();">Refresh Now</button>
+            <button class="btn btn-danger" onclick="confirmEvictAll()">Flush All Keys</button>
+            <button class="btn" onclick="fetchLiveStats(); fetchKeys();">Refresh</button>
         </div>
     </header>
 
@@ -411,17 +475,22 @@
         <div class="stat-card purple">
             <div class="stat-label">Races Serialized</div>
             <div class="stat-value" id="statRacesSerialized">0</div>
-            <div class="stat-subtext">Parallel duplicates serialized</div>
+            <div class="stat-subtext">Concurrent locks merged</div>
         </div>
         <div class="stat-card amber">
             <div class="stat-label">Active Cached Keys</div>
             <div class="stat-value" id="statActiveKeys">0</div>
-            <div class="stat-subtext">In-flight and resolved</div>
+            <div class="stat-subtext">In-flight & resolved</div>
         </div>
         <div class="stat-card rose">
             <div class="stat-label">Throttled Requests</div>
             <div class="stat-value" id="statRateLimited">0</div>
             <div class="stat-subtext">HTTP 429 Too Many Requests</div>
+        </div>
+        <div class="stat-card cyan">
+            <div class="stat-label">Mean Latency</div>
+            <div class="stat-value" id="statMeanLatency">0 ms</div>
+            <div class="stat-subtext">End-to-end proxy time</div>
         </div>
     </div>
 
@@ -430,11 +499,20 @@
         <!-- Keys Management Table -->
         <div class="panel">
             <div class="panel-header">
-                <div class="panel-title">Idempotency Keys Register</div>
+                <div class="panel-title">
+                    <span>Idempotency Keys Register</span>
+                </div>
                 <span style="font-size: 0.8rem; color: var(--text-muted);" id="tableCount">0 keys stored</span>
             </div>
 
-            <input type="text" id="searchInput" class="search-bar" placeholder="Search by key, status, or fingerprint..." oninput="filterTable()">
+            <div class="filter-row">
+                <input type="text" id="searchInput" class="search-bar" placeholder="Search by key, status, or fingerprint..." oninput="filterTable()">
+                <select id="statusFilter" style="width: 130px;" onchange="filterTable()">
+                    <option value="">All Statuses</option>
+                    <option value="RESOLVED">RESOLVED</option>
+                    <option value="IN_FLIGHT">IN_FLIGHT</option>
+                </select>
+            </div>
 
             <div class="table-responsive">
                 <table>
@@ -442,9 +520,9 @@
                         <tr>
                             <th>Key</th>
                             <th>Status</th>
-                            <th>Fingerprint (SHA-256)</th>
+                            <th>Fingerprint</th>
                             <th>Code</th>
-                            <th>Created At</th>
+                            <th>Created</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -460,26 +538,42 @@
         <!-- Interactive Testing Simulator -->
         <div class="panel">
             <div class="panel-header">
-                <div class="panel-title">Live Request Simulator</div>
+                <div class="panel-title">Interactive Simulator</div>
             </div>
-            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
-                Send a test request through IdemGate to watch concurrency locking and cached replay in real time.
+            <p style="font-size: 0.80rem; color: var(--text-muted); margin-bottom: 12px;">
+                Submit live requests through IdemGate to test locking, rate limiting, and cached replay.
             </p>
 
             <form class="sim-form" onsubmit="executeSimulation(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Method</label>
+                        <select id="simMethod">
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="PATCH">PATCH</option>
+                            <option value="DELETE">DELETE</option>
+                            <option value="GET">GET</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Path</label>
+                        <input type="text" id="simPath" value="/api/v1/orders" required>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label>Idempotency-Key</label>
                     <input type="text" id="simKey" value="demo-order-key-101" required>
                 </div>
                 <div class="form-group">
-                    <label>API Key (Tenant)</label>
+                    <label>API Key / Tenant</label>
                     <input type="text" id="simApiKey" value="tenant-acme-corp">
                 </div>
                 <div class="form-group">
                     <label>JSON Payload</label>
                     <textarea id="simBody" rows="3">{"orderId": "101", "amount": 199.99, "currency": "USD"}</textarea>
                 </div>
-                <button type="submit" class="btn btn-primary" style="margin-top: 6px;">Send Request</button>
+                <button type="submit" class="btn btn-primary" style="margin-top: 4px;">Execute Proxy Request</button>
             </form>
 
             <div class="sim-result" id="simResultOutput">// Request telemetry will appear here...</div>
@@ -491,15 +585,27 @@
 <div class="modal-overlay" id="inspectModal" onclick="closeModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
         <div class="modal-header">
-            <h3 style="font-size: 1.15rem; font-weight: 700;">Key Details</h3>
+            <h3 style="font-size: 1.15rem; font-weight: 700;">Key Inspection</h3>
             <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
-        <pre id="modalJsonContent" style="background: var(--bg-base); padding: 14px; border-radius: var(--radius-md); font-size: 0.8rem; overflow-x: auto; max-height: 400px;"></pre>
+        <pre id="modalJsonContent" style="background: var(--bg-base); padding: 14px; border-radius: var(--radius-md); font-size: 0.78rem; overflow-x: auto; max-height: 400px; color: #38bdf8;"></pre>
     </div>
 </div>
 
 <script>
     let allKeys = [];
+
+    async function fetchConfig() {
+        try {
+            const res = await fetch('/idemgate/api/v1/config');
+            if (res.ok) {
+                const cfg = await res.json();
+                document.getElementById('storageBadge').innerText = `Storage: ${cfg.storageType || 'memory'}`;
+            }
+        } catch (e) {
+            console.debug("Config load fallback", e);
+        }
+    }
 
     async function fetchLiveStats() {
         try {
@@ -513,6 +619,11 @@
             document.getElementById('statRacesSerialized').innerText = data.raceConditionsSerialized || 0;
             document.getElementById('statActiveKeys').innerText = data.activeCachedKeys || 0;
             document.getElementById('statRateLimited').innerText = data.rateLimitedRequests || 0;
+            document.getElementById('statMeanLatency').innerText = (data.meanProxyLatencyMs || 0) + ' ms';
+
+            if (data.storageType) {
+                document.getElementById('storageBadge').innerText = `Storage: ${data.storageType}`;
+            }
         } catch (e) {
             console.error("Failed to load live stats", e);
         }
@@ -520,11 +631,11 @@
 
     async function fetchKeys() {
         try {
-            const res = await fetch('/idemgate/api/v1/keys?limit=100');
+            const res = await fetch('/idemgate/api/v1/keys?limit=200');
             if (!res.ok) return;
             const data = await res.json();
             allKeys = data.keys || [];
-            renderTable(allKeys);
+            filterTable();
         } catch (e) {
             console.error("Failed to load keys", e);
         }
@@ -532,16 +643,16 @@
 
     function renderTable(keys) {
         const tbody = document.getElementById('keysTableBody');
-        document.getElementById('tableCount').innerText = `${keys.length} keys stored`;
+        document.getElementById('tableCount').innerText = `${keys.length} keys displayed`;
 
         if (!keys || keys.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No active idempotency keys found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No matching idempotency keys found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = keys.map(k => {
             const badgeClass = k.status === 'RESOLVED' ? 'badge-resolved' : 'badge-inflight';
-            const shortFp = k.fingerprint ? k.fingerprint.substring(0, 12) + '...' : 'none';
+            const shortFp = k.fingerprint ? k.fingerprint.substring(0, 10) + '...' : 'none';
             const shortTime = k.createdAt ? new Date(k.createdAt).toLocaleTimeString() : '-';
             const code = k.statusCode ? k.statusCode : '-';
 
@@ -553,8 +664,10 @@
                     <td>${code}</td>
                     <td>${shortTime}</td>
                     <td>
-                        <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="inspectKey('${k.key}')">Inspect</button>
-                        <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem; margin-left: 4px;" onclick="evictKey('${k.key}')">Evict</button>
+                        <div class="btn-group">
+                            <button class="btn" style="padding: 3px 8px; font-size: 0.72rem;" onclick="inspectKey('${escapeHtml(k.key)}')">Inspect</button>
+                            <button class="btn btn-danger" style="padding: 3px 8px; font-size: 0.72rem;" onclick="evictKey('${escapeHtml(k.key)}')">Evict</button>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -563,15 +676,19 @@
 
     function filterTable() {
         const q = document.getElementById('searchInput').value.toLowerCase().trim();
-        if (!q) {
-            renderTable(allKeys);
-            return;
+        const statusFilter = document.getElementById('statusFilter').value;
+
+        let filtered = allKeys;
+        if (statusFilter) {
+            filtered = filtered.filter(k => k.status === statusFilter);
         }
-        const filtered = allKeys.filter(k =>
-            (k.key && k.key.toLowerCase().includes(q)) ||
-            (k.status && k.status.toLowerCase().includes(q)) ||
-            (k.fingerprint && k.fingerprint.toLowerCase().includes(q))
-        );
+        if (q) {
+            filtered = filtered.filter(k =>
+                (k.key && k.key.toLowerCase().includes(q)) ||
+                (k.status && k.status.toLowerCase().includes(q)) ||
+                (k.fingerprint && k.fingerprint.toLowerCase().includes(q))
+            );
+        }
         renderTable(filtered);
     }
 
@@ -589,7 +706,7 @@
     }
 
     async function evictKey(key) {
-        if (!confirm(`Are you sure you want to evict idempotency key '${key}'?`)) return;
+        if (!confirm(`Evict idempotency key '${key}'?`)) return;
         try {
             const res = await fetch(`/idemgate/api/v1/keys/${encodeURIComponent(key)}`, { method: 'DELETE' });
             if (res.ok) {
@@ -601,42 +718,64 @@
         }
     }
 
+    async function confirmEvictAll() {
+        if (!confirm("Are you sure you want to flush all idempotency keys from storage?")) return;
+        try {
+            const res = await fetch('/idemgate/api/v1/keys', { method: 'DELETE' });
+            if (res.ok) {
+                const data = await res.json();
+                alert(`Flushed ${data.evictedCount || 0} keys.`);
+                fetchKeys();
+                fetchLiveStats();
+            }
+        } catch (e) {
+            alert("Failed to flush keys: " + e.message);
+        }
+    }
+
     function closeModal() {
         document.getElementById('inspectModal').style.display = 'none';
     }
 
     async function executeSimulation(e) {
         e.preventDefault();
+        const method = document.getElementById('simMethod').value;
+        const path = document.getElementById('simPath').value.trim();
         const key = document.getElementById('simKey').value.trim();
         const apiKey = document.getElementById('simApiKey').value.trim();
         const body = document.getElementById('simBody').value;
         const out = document.getElementById('simResultOutput');
 
-        out.innerText = "Dispatching request through proxy...";
+        out.innerText = `Dispatching ${method} ${path} through proxy...`;
 
         const start = performance.now();
         try {
-            const res = await fetch('/api/v1/orders', {
-                method: 'POST',
+            const options = {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Idempotency-Key': key,
                     'X-API-Key': apiKey
-                },
-                body: body
-            });
+                }
+            };
+            if (method !== 'GET' && method !== 'HEAD') {
+                options.body = body;
+            }
 
+            const res = await fetch(path, options);
             const duration = Math.round(performance.now() - start);
             const status = res.status;
             const replayed = res.headers.get('Idempotent-Replayed');
             const reqId = res.headers.get('X-IdemGate-Request-Id');
             const proxyLatency = res.headers.get('X-IdemGate-Latency-Ms');
+            const rateLimitRemaining = res.headers.get('X-RateLimit-Remaining');
             const data = await res.json();
 
             out.innerText = `HTTP ${status} (${duration}ms)\n` +
-                `Idempotent-Replayed: ${replayed}\n` +
-                `X-IdemGate-Request-Id: ${reqId}\n` +
-                `X-IdemGate-Latency-Ms: ${proxyLatency}ms\n\n` +
+                `Idempotent-Replayed: ${replayed || 'none'}\n` +
+                `X-IdemGate-Request-Id: ${reqId || 'none'}\n` +
+                `X-IdemGate-Latency-Ms: ${proxyLatency || duration}ms\n` +
+                `X-RateLimit-Remaining: ${rateLimitRemaining || 'N/A'}\n\n` +
                 JSON.stringify(data, null, 2);
 
             fetchKeys();
@@ -657,6 +796,7 @@
     }, 4000);
 
     // Initial load
+    fetchConfig();
     fetchLiveStats();
     fetchKeys();
 </script>

@@ -52,7 +52,7 @@ class AdminFeaturesIntegrationTest {
                 .value(html -> {
                     assertThat(html).contains("IdemGate");
                     assertThat(html).contains("Idempotency Keys Register");
-                    assertThat(html).contains("Live Request Simulator");
+                    assertThat(html).contains("Interactive Simulator");
                 });
     }
 
@@ -87,7 +87,8 @@ class AdminFeaturesIntegrationTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.totalRequests").isNumber()
-                .jsonPath("$.activeCachedKeys").isNumber();
+                .jsonPath("$.activeCachedKeys").isNumber()
+                .jsonPath("$.storageType").isNotEmpty();
 
         // 4. Manually evict the key
         webTestClient.delete()
@@ -112,6 +113,50 @@ class AdminFeaturesIntegrationTest {
         var stats = mockUpstreamController.getInvocationStats().block();
         assertThat(stats).isNotNull();
         assertThat(stats.get("totalInvocations")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Should flush all keys via DELETE /idemgate/api/v1/keys")
+    void shouldFlushAllKeys() {
+        String key1 = "flush-key-1-" + System.currentTimeMillis();
+        String key2 = "flush-key-2-" + System.currentTimeMillis();
+
+        webTestClient.post()
+                .uri("/api/v1/orders")
+                .header("Idempotency-Key", key1)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"item\": \"A\"}")
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient.post()
+                .uri("/api/v1/orders")
+                .header("Idempotency-Key", key2)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"item\": \"B\"}")
+                .exchange()
+                .expectStatus().isCreated();
+
+        webTestClient.delete()
+                .uri("/idemgate/api/v1/keys")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.evictedCount").isNumber()
+                .jsonPath("$.message").value(val -> assertThat(val.toString()).contains("successfully evicted"));
+    }
+
+    @Test
+    @DisplayName("Should export active configuration via GET /idemgate/api/v1/config")
+    void shouldExportConfig() {
+        webTestClient.get()
+                .uri("/idemgate/api/v1/config")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.storageType").isEqualTo("memory")
+                .jsonPath("$.idempotencyHeader").isEqualTo("Idempotency-Key")
+                .jsonPath("$.rateLimitEnabled").isEqualTo(true);
     }
 
     @Test

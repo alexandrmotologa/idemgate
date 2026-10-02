@@ -4,6 +4,8 @@ import com.engine.idemgate.model.CachedHttpResponse;
 import com.engine.idemgate.model.IdempotencyRecord;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 /**
  * Storage SPI for managing idempotency key lifecycle, concurrency locks, and cached responses.
  */
@@ -65,10 +67,17 @@ public interface IdempotencyStore {
     Mono<Boolean> evict(String key);
 
     /**
+     * Evicts all active idempotency keys from storage.
+     *
+     * @return Mono emitting count of evicted keys
+     */
+    Mono<Long> evictAll();
+
+    /**
      * Lists active idempotency records up to the specified limit.
      *
      * @param limit Maximum number of records to return
      * @return Mono emitting list of records
      */
-    Mono<java.util.List<IdempotencyRecord>> listKeys(int limit);
+    Mono<List<IdempotencyRecord>> listKeys(int limit);
 }

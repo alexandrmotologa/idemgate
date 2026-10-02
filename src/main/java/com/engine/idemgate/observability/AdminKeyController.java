@@ -1,8 +1,10 @@
 package com.engine.idemgate.observability;
 
+import com.engine.idemgate.config.IdemGateProperties;
 import com.engine.idemgate.idempotency.IdempotencyStore;
 import com.engine.idemgate.model.IdempotencyRecord;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
@@ -10,10 +12,11 @@ import reactor.core.publisher.Mono;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * REST management controller for inspecting, listing, and manually evicting idempotency keys,
- * as well as providing aggregated operational statistics for the dashboard.
+ * exporting configuration, and providing aggregated operational statistics for the dashboard.
  */
 @RestController
 @RequestMapping("/idemgate/api/v1")
@@ -21,10 +24,12 @@ public class AdminKeyController {
 
     private final IdempotencyStore store;
     private final MeterRegistry meterRegistry;
+    private final IdemGateProperties properties;
 
-    public AdminKeyController(IdempotencyStore store, MeterRegistry meterRegistry) {
+    public AdminKeyController(IdempotencyStore store, MeterRegistry meterRegistry, IdemGateProperties properties) {
         this.store = store;
         this.meterRegistry = meterRegistry;
+        this.properties = properties;
     }
 
     @GetMapping("/keys")
@@ -52,6 +57,33 @@ public class AdminKeyController {
                 )));
     }
 
+    @DeleteMapping("/keys")
+    public Mono<ResponseEntity<Map<String, Object>>> evictAllKeys() {
+        return store.evictAll()
+                .map(count -> ResponseEntity.ok(Map.of(
+                        "evictedCount", count,
+                        "message", "All idempotency keys successfully evicted"
+                )));
+    }
+
+    @GetMapping("/config")
+    public Mono<ResponseEntity<Map<String, Object>>> getConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("storageType", properties.getStorage().getType());
+        config.put("upstreamUrl", properties.getUpstream().getUrl());
+        config.put("idempotencyHeader", properties.getIdempotency().getHeaderName());
+        config.put("lockTtlSeconds", properties.getIdempotency().getLockTtlSeconds());
+        config.put("recordTtlSeconds", properties.getIdempotency().getRecordTtlSeconds());
+        config.put("maxBodySizeBytes", properties.getIdempotency().getMaxBodySizeBytes());
+        config.put("rateLimitEnabled", properties.getRateLimit().isEnabled());
+        config.put("defaultCapacity", properties.getRateLimit().getDefaultCapacity());
+        config.put("defaultRefillRate", properties.getRateLimit().getDefaultRefillRate());
+        config.put("fingerprintHeaders", properties.getIdempotency().getFingerprint().getIncludeHeaders());
+        config.put("tiers", properties.getRateLimit().getTiers());
+        config.put("routeRules", properties.getRateLimit().getRouteRules());
+        return Mono.just(ResponseEntity.ok(config));
+    }
+
     @GetMapping("/stats")
     public Mono<ResponseEntity<Map<String, Object>>> getLiveStats() {
         return store.listKeys(500)
@@ -69,6 +101,11 @@ public class AdminKeyController {
                             ? (cacheHits / (cacheHits + cacheMisses)) * 100.0
                             : 0.0;
 
+                    Timer proxyTimer = meterRegistry.find("idemgate.proxy.latency").timer();
+                    double meanLatencyMs = proxyTimer != null ? proxyTimer.mean(TimeUnit.MILLISECONDS) : 0.0;
+                    double maxLatencyMs = proxyTimer != null ? proxyTimer.max(TimeUnit.MILLISECONDS) : 0.0;
+
+                    stats.put("storageType", properties.getStorage().getType());
                     stats.put("totalRequests", (long) totalRequests);
                     stats.put("cacheHits", (long) cacheHits);
                     stats.put("cacheMisses", (long) cacheMisses);
@@ -77,6 +114,8 @@ public class AdminKeyController {
                     stats.put("rateLimitedRequests", (long) rateLimited);
                     stats.put("cacheHitRatioPercent", Math.round(hitRatio * 10.0) / 10.0);
                     stats.put("activeCachedKeys", records.size());
+                    stats.put("meanProxyLatencyMs", Math.round(meanLatencyMs * 100.0) / 100.0);
+                    stats.put("maxProxyLatencyMs", Math.round(maxLatencyMs * 100.0) / 100.0);
 
                     return ResponseEntity.ok(stats);
                 });

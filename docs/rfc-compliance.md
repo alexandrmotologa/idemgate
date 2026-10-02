@@ -23,9 +23,15 @@ Content-Type: application/json
 ### Constraints on the Header Value
 
 Per section 2.1 of the draft:
-- The `Idempotency-Key` value is an opaque string.
-- Valid characters must conform to standard HTTP field-value syntax.
+- The `Idempotency-Key` value is an opaque string containing only ASCII printable characters (`VCHAR`: 0x21 to 0x7E).
+- Control characters and spaces are rejected with `400 Bad Request`.
 - Maximum key length is configurable in IdemGate (default: 256 characters). Keys exceeding this length return `400 Bad Request`.
+
+### Safe HTTP Methods Handling
+
+Per Section 2.1:
+- The `Idempotency-Key` request header has no semantics for safe HTTP methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`).
+- Safe requests containing an `Idempotency-Key` are passed directly through to the upstream microservice without acquiring locks or creating cache records.
 
 ## Digest Validation and Replay
 
@@ -48,7 +54,7 @@ When a request contains an `Idempotency-Key`, IdemGate computes a cryptographic 
 - Upstream service is not contacted.
 
 ### 3. Payload Mismatch Error
-- If a client repeats an existing `Idempotency-Key` but alters the method, path, query parameters, or payload body, IdemGate rejects the request with status code `422 Unprocessable Entity`:
+- If a client repeats an existing `Idempotency-Key` but alters the method, path, query parameters, payload body, or whitelisted header, IdemGate rejects the request with status code `422 Unprocessable Entity`:
   ```http
   HTTP/1.1 422 Unprocessable Entity
   Content-Type: application/problem+json
@@ -62,7 +68,11 @@ When a request contains an `Idempotency-Key`, IdemGate computes a cryptographic 
   }
   ```
 
-### 4. Concurrent In-Flight Execution
+### 4. Transient 5xx Upstream Server Errors
+- Per Section 2.6: Transient server errors (500, 502, 503, 504) returned by the upstream backend are **not** permanently cached as resolved idempotency records.
+- IdemGate immediately releases the in-flight lock, returning the 5xx response to the client with `Idempotent-Replayed: false` so subsequent retries are allowed to hit the upstream again once recovered.
+
+### 5. Concurrent In-Flight Execution
 - If a duplicate request arrives while the original request is still being processed upstream, IdemGate holds the connection until the initial request finishes.
 - Once the original request finishes, both the original caller and the waiting duplicate caller receive identical responses. The waiting caller receives `Idempotent-Replayed: true`.
 - If the wait duration exceeds `idemgate.idempotency.lock-ttl-seconds`, IdemGate returns `504 Gateway Timeout`.

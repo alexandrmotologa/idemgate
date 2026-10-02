@@ -36,15 +36,15 @@ When clients retry requests or send parallel requests with the same `Idempotency
 
 ## Features
 
-- **IETF RFC Compliance**: Implements `draft-ietf-httpapi-idempotency-key-header-04` including `Idempotency-Key` validation, payload fingerprinting, and RFC 7807 problem details.
+- **IETF RFC Compliance**: Implements `draft-ietf-httpapi-idempotency-key-header-04` including `Idempotency-Key` validation, payload fingerprinting, safe method pass-through (`GET`/`HEAD`/`OPTIONS`), transient 5xx non-caching, and RFC 7807 problem details.
 - **Concurrent Race Serialization**: When duplicate requests arrive simultaneously, IdemGate holds secondary requests on a synchronization channel until the first finishes, avoiding duplicate backend execution.
 - **Payload & Header Fingerprinting**: Computes a SHA-256 digest over the HTTP method, normalized target path, query string, request payload, and optional whitelisted headers (e.g. `X-Tenant-ID`). Reusing a key with an altered body or header returns `422 Unprocessable Entity`.
 - **Dual Backplane Architecture**: Runs with distributed Redis 7+ and Redisson in multi-node clusters, or with an embedded Caffeine and CompletableFuture store for standalone and local development setups.
 - **Multi-Tenant & Route Rate Limiting**: Token bucket rate limiting using Redis atomic Lua scripts or an in-memory bucket. Supports tenant extraction, tier overrides, and granular route/method-specific rules.
-- **Web Console Dashboard**: Embedded, zero-dependency dark-mode dashboard at `/idemgate/dashboard` featuring real-time metrics, active key inspection, and an interactive request simulator.
-- **Operator Eviction API**: REST management endpoints to list active keys (`GET /idemgate/api/v1/keys`) and manually evict poisoned or expired keys (`DELETE /idemgate/api/v1/keys/{key}`).
+- **Web Console Dashboard**: Embedded, zero-dependency dark-mode dashboard at `/idemgate/dashboard` featuring real-time metrics, active key inspection, status filters, and an interactive multi-method request simulator.
+- **Operator Eviction & Config API**: REST management endpoints to list active keys (`GET /idemgate/api/v1/keys`), inspect records (`GET /idemgate/api/v1/inspect/{key}`), manually evict individual keys (`DELETE /idemgate/api/v1/keys/{key}`), flush all keys (`DELETE /idemgate/api/v1/keys`), and view active runtime configuration (`GET /idemgate/api/v1/config`).
 - **W3C Tracing & Telemetry**: Propagates W3C `traceparent` headers and injects `X-IdemGate-Request-Id` and `X-IdemGate-Latency-Ms` timing headers on all responses.
-- **Prometheus Metrics**: Detailed counters and timers covering request volume, cache hits, cache misses, serialized races, and rate-limited calls.
+- **Prometheus Metrics**: Detailed counters and timers covering request volume, cache hits, cache misses, serialized races, rate-limited calls, and proxy/upstream latency percentiles.
 
 ## Quick Start
 
@@ -156,10 +156,11 @@ IdemGate includes a built-in dark mode management console at `/idemgate/dashboar
 </p>
 
 The dashboard provides:
-- Live metrics for total throughput, cache hit percentage, serialized race conditions, and throttled requests.
-- Idempotency key registry displaying SHA-256 fingerprints, HTTP status codes, and single-click manual eviction.
-- An interactive request simulator that submits requests through the proxy filter and prints latency and replay telemetry.
+- Live metrics for total throughput, cache hit percentage, serialized race conditions, throttled requests, and mean proxy latency.
+- Idempotency key registry displaying SHA-256 fingerprints, HTTP status codes, status filters, and single-click manual eviction.
+- An interactive multi-method request simulator that submits requests through the proxy filter and prints latency and replay telemetry.
 - Detailed modal inspection showing stored response headers, expiration times, and payload metadata.
+- Storage backplane status indicator and a one-click operator key flushing action.
 
 <p align="center">
   <img src="docs/images/dashboard-inspect-modal.png" alt="IdemGate Key Inspection Modal" width="100%" />
