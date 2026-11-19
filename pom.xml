@@ -13,7 +13,7 @@
 
     <groupId>com.engine.idemgate</groupId>
     <artifactId>idemgate</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>idemgate</name>
     <description>Distributed Idempotency and Rate-Limiting Reverse Proxy Sidecar</description>
 
@@ -101,6 +101,7 @@
     </dependencies>
 
     <build>
+        <finalName>idemgate</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

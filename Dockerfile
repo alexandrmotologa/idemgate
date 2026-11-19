@@ -17,7 +17,7 @@ WORKDIR /app
 RUN addgroup -S idemgate && adduser -S idemgate -G idemgate
 USER idemgate
 
-COPY --from=builder /workspace/target/idemgate-*.jar app.jar
+COPY --from=builder /workspace/target/idemgate*.jar app.jar
 
 EXPOSE 8080
 
